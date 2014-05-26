@@ -1,8 +1,8 @@
 git-create-remote
 -----------------
 
-A git extension to create Create a new github or bitbucket repo. To install,
-simply place git-create-remote somewhere in your `$PATH`.
+A git extension to create a new github or bitbucket repo. To install, simply
+place git-create-remote somewhere in your `$PATH`.
 
     usage: git create-remote [options] <gh|bb>:<project_name>
     
