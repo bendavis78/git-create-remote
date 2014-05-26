@@ -1,0 +1,107 @@
+#!/bin/bash
+
+shopt -s nocasematch;
+basename="$(basename $0)";
+invoker="$(ps -o comm= -p $(ps -o ppid= -p $$))";
+[[ "$invoker" == "git" ]] && basename="git ${basename/git-/}"
+USAGE="usage: $basename [options] <gh|bb>:<project_name>"
+OPTIONS="
+    -u <username>   Github/BitBucket username
+    -s, --silent    don't print anything to STDOUT
+    --nobrowser     don't open browser
+    -h, --help      show this help message and exit
+"
+HELP="
+  Create a new Github or Bitbucket repository. 
+
+  $USAGE
+
+$OPTIONS
+"
+
+msg() {
+    # echo to stderr if stdin is being use, otherwise echo to stdout
+    [[ -t 0 ]] && echo "$@" >&2 || echo "$@";
+}
+
+argerr() {
+    echo "error: $1" >&2
+    echo -e "$USAGE\n$OPTIONS" >&2
+    exit 1;
+}
+
+user="";
+silent=false;
+nobrowser=false;
+while [[ "${#@}" -gt 0 ]]; do
+    case "$1" in
+        -u) user=$2; shift 2;;
+        -s|--silent) silent=true; shift;;
+        -n|--nobrowser) browser=true; shift;;
+        -h|--help) msg "$HELP" && exit 0;;
+        -*) argerr "invalid option: $1";;
+        *) break;;
+    esac
+done
+
+[[ -z "$1" ]] && msg -e "$USAGE\n$OPTIONS" && exit 1;
+
+# this validates path-segment, not sure about Git/GH/BB specifics
+PATH_SEGMENT="[A-Za-z0-9._~!$&()*+,;=:@-]+"
+VALID="^((.*):)?($PATH_SEGMENT)$"
+if [[ ! "${1}" =~ $VALID ]]; then
+   argerr "Invalid project name: \`$1'"
+fi
+
+service="${BASH_REMATCH[2]}";
+project_name="${BASH_REMATCH[3]}";
+
+case "$service" in
+    gh)
+        user_env_var="GITHUB_USERNAME"
+        service_name="Github"
+        domain="github.com"
+        apiurl="https://api.github.com/user/repos"
+        data="{\"name\":\"$project_name\"}" 
+        ;;
+    bb)
+        user_env_var="BITBUCKET_USERNAME"
+        service_name="Bitbucket"
+        domain="bitbucket.org"
+        apiurl="https://api.bitbucket.org/1.0/repositories/"
+        data="name=$project_name"
+        ;;
+    *)
+        argerr "Invalid service prefix: '$service'"
+esac
+
+[[ -z "$user" ]] && user="${!user_env_var}";
+[[ -z "$user" ]] && msg -n "$service_name username: " && read user
+[[ -z "$user" ]] && msg "Could not get username" && exit 1;
+
+msg -n "$service_name password: " && read -s pass
+
+cmd="curl -sw %{http_code} -o /dev/null -u ${user}:${pass} $apiurl -d $data"
+response=$($cmd);
+case "$response" in
+    20[0-1]) msg "Successfully created $user/$project_name";;
+        401) msg "Invalid credentials." >&2; exit 1;;
+          *) msg "HTTP Error $response" >&2; exit 1;;
+esac
+
+$silent && exit 0;
+
+httpurl="https://${domain}/${user}/${project_name}";
+giturl="git@${domain}:${user}/${project_name}.git";
+
+msg -n "Web URL: ";
+echo $httpurl;
+msg -n "Git URL: "
+echo $giturl
+
+$nobrowser && exit 0;
+if which xdg-open; then
+    xdg-open "$httpurl";
+elif which python; then
+    python -mwebbrowser "$httpurl"
+fi
