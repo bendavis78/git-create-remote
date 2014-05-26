@@ -100,8 +100,6 @@ msg -n "Git URL: "
 echo $giturl
 
 $nobrowser && exit 0;
-if which xdg-open; then
-    xdg-open "$httpurl";
-elif which python; then
-    python -mwebbrowser "$httpurl"
+if which python; then
+    python -mwebbrowser "$httpurl" &> /dev/null;
 fi
