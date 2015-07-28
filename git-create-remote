@@ -6,10 +6,11 @@ invoker="$(ps -o comm= -p $(ps -o ppid= -p $$))";
 [[ "$invoker" == "git" ]] && basename="git ${basename/git-/}"
 USAGE="usage: $basename [options] <gh|bb>:<project_name>"
 OPTIONS="
-    -u <username>   Github/BitBucket username
-    -s, --silent    don't print anything to STDOUT
-    --nobrowser     don't open browser
-    -h, --help      show this help message and exit
+    -u <username>           Github/BitBucket username
+    -q, --quiet             don't print anything to STDOUT
+    -a, --add-remote NAME   add remote to current repo as NAME
+    --nobrowser             don't open browser
+    -h, --help              show this help message and exit
 "
 HELP="
   Create a new Github or Bitbucket repository. 
@@ -31,13 +32,15 @@ argerr() {
 }
 
 user="";
-silent=false;
+quiet=false;
+add_remote="";
 nobrowser=false;
 while [[ "${#@}" -gt 0 ]]; do
     case "$1" in
         -u) user=$2; shift 2;;
-        -s|--silent) silent=true; shift;;
+        -q|--quiet) quiet=true; shift;;
         -n|--nobrowser) browser=true; shift;;
+        -a|--add-remote) shift; add_remote="$1"; shift;;
         -h|--help) msg "$HELP" && exit 0;;
         -*) argerr "invalid option: $1";;
         *) break;;
@@ -79,7 +82,8 @@ esac
 [[ -z "$user" ]] && msg -n "$service_name username: " && read user
 [[ -z "$user" ]] && msg "Could not get username" && exit 1;
 
-msg -n "$service_name password: " && read -s pass
+msg -n "$service_name password: " && read -s pass;
+echo;
 
 cmd="curl -sw %{http_code} -o /dev/null -u ${user}:${pass} $apiurl -d $data"
 response=$($cmd);
@@ -89,10 +93,33 @@ case "$response" in
           *) msg "HTTP Error $response" >&2; exit 1;;
 esac
 
-$silent && exit 0;
 
 httpurl="https://${domain}/${user}/${project_name}";
 giturl="git@${domain}:${user}/${project_name}.git";
+
+if [[ -n "$add_remote" ]]; then
+    [[ ! -d .git ]] && git init;
+    git remote add "$add_remote" $giturl || exit 1;
+elif ! $quiet; then
+    if [[ ! -d .git ]]; then
+        msg -n "Initialize git repo in current directory [y/N]? " && read answer;
+        if [[ "$answer" =~ [yY] ]]; then
+            git init || exit 1;
+            echo
+        fi
+    fi
+    if [[ -d .git ]]; then
+        msg -n "Add remote to local repository [y/N]? " && read answer;
+        if [[ "$answer" =~ [yY] ]]; then
+            msg -n "remote name [origin]: " && read remote_name;
+            [[ -z "$remote_name" ]] && remote_name="origin";
+            git remote add "$remote_name" $giturl;
+        fi
+        echo
+    fi
+fi
+
+$quiet && exit 0;
 
 msg -n "Web URL: ";
 echo $httpurl;
@@ -100,6 +127,6 @@ msg -n "Git URL: "
 echo $giturl
 
 $nobrowser && exit 0;
-if which python; then
+if command -v python &> /dev/null; then
     python -mwebbrowser "$httpurl" &> /dev/null;
 fi
